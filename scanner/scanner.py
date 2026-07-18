@@ -66,18 +66,29 @@ def send_telegram(message: str) -> bool:
 def get_ath_and_current(ticker: str) -> tuple[float, float, str] | None:
     """
     Returns (ath_price, current_price, currency) for a ticker, or None on error.
-    Uses 5-year max history to approximate ATH.
+    Uses full max history to get the true All-Time High.
     """
     try:
         t = yf.Ticker(ticker)
-        hist = t.history(period="5y", auto_adjust=True)
+        hist = t.history(period="max", auto_adjust=True)
         if hist.empty:
             return None
         ath = float(hist["High"].max())
         current = float(hist["Close"].iloc[-1])
         info = t.fast_info
         currency = getattr(info, "currency", "USD") or "USD"
-        return ath, current, currency
+        try:
+            info_full = t.info
+            name = info_full.get("longName") or info_full.get("shortName") or ticker
+            sector = info_full.get("sector", "")
+            summary_text = info_full.get("longBusinessSummary", "")
+            # Trim summary to first sentence
+            short_summary = summary_text.split(".")[0] + "." if summary_text else ""
+        except Exception:
+            name = ticker
+            sector = ""
+            short_summary = ""
+        return ath, current, currency, name, sector, short_summary
     except Exception as e:
         log.debug("Failed fetching %s: %s", ticker, e)
         return None
@@ -100,7 +111,7 @@ def scan():
             errors.append(ticker)
             continue
 
-        ath, current, currency = result
+        ath, current, currency, name, sector, short_summary = result
 
         if ath <= 0:
             continue
@@ -115,6 +126,9 @@ def scan():
         if drop_pct >= ATH_DROP_THRESHOLD and ticker not in alerted:
             alerts.append({
                 "ticker": ticker,
+                "name": name,
+                "sector": sector,
+                "summary": short_summary,
                 "current": current,
                 "ath": ath,
                 "drop_pct": drop_pct * 100,
@@ -126,19 +140,21 @@ def scan():
     for a in alerts:
         msg = (
             f"🚨 <b>ATH DROP ALERT</b>\n\n"
-            f"📉 <b>{a['ticker']}</b>\n"
+            f"<b>{a['ticker']}</b> — {a['name']}\n"
+            f"Sector        : {a['sector'] or 'N/A'}\n"
+            f"About         : {a['summary'] or 'N/A'}\n\n"
             f"Current price : <b>{a['currency']} {a['current']:,.2f}</b>\n"
             f"All-Time High : <b>{a['currency']} {a['ath']:,.2f}</b>\n"
             f"Drop from ATH : <b>-{a['drop_pct']:.1f}%</b>\n\n"
-            f"⚠️ This stock is ≥{ATH_DROP_THRESHOLD*100:.0f}% below its 5-year ATH.\n"
-            f"🕒 Scanned at {now}"
+            f"This stock is ≥{ATH_DROP_THRESHOLD*100:.0f}% below its All-Time High.\n"
+            f"Scanned at {now}"
         )
         sent = send_telegram(msg)
         log.info("ALERT sent (%s): %s  drop=%.1f%%", "✓" if sent else "print", a["ticker"], a["drop_pct"])
 
     # Summary message
     summary = (
-        f"✅ <b>Scan complete</b> — {now}\n"
+        f"<b>Scan complete</b> — {now}\n"
         f"Tickers scanned : {len(TOP_100_TICKERS)}\n"
         f"Alerts fired    : {len(alerts)}\n"
         f"Failed fetches  : {len(errors)}"
@@ -164,7 +180,7 @@ def main():
     log.info("═" * 55)
 
     if TELEGRAM_BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        log.warning("⚠️  Telegram not configured. Edit config.py first.")
+        log.warning("Telegram not configured. Edit config.py first.")
         log.warning("   Alerts will be printed to console only.")
 
     # Run once immediately
