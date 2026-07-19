@@ -12,7 +12,9 @@ Usage:
 
 import sys
 import time
+import json
 import logging
+from pathlib import Path
 from datetime import datetime
 
 import requests
@@ -34,8 +36,21 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Track which tickers we've already alerted on (reset each run)
-alerted: set[str] = set()
+# Track which tickers we've already alerted on (persisted to disk)
+ALERTED_FILE = Path(__file__).parent / "alerted.json"
+
+def load_alerted() -> set[str]:
+    if ALERTED_FILE.exists():
+        try:
+            return set(json.loads(ALERTED_FILE.read_text()))
+        except Exception:
+            pass
+    return set()
+
+def save_alerted(alerted: set[str]) -> None:
+    ALERTED_FILE.write_text(json.dumps(sorted(alerted), indent=2))
+
+alerted: set[str] = load_alerted()
 
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -166,6 +181,7 @@ def scan():
     if errors:
         log.warning("Could not fetch: %s", ", ".join(errors))
 
+    save_alerted(alerted)
     log.info("Scan done. Alerts: %d", len(alerts))
 
 
