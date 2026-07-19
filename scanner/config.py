@@ -10,8 +10,8 @@ TELEGRAM_CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID",   "YOUR_CHAT_ID_HERE")
 # How far below ATH triggers an alert (0.50 = 50% below ATH)
 ATH_DROP_THRESHOLD = 0.50
 
-# How often to scan (minutes)
-SCAN_INTERVAL_MINUTES = 60
+# How often to scan (minutes) — used for local continuous mode only
+SCAN_INTERVAL_MINUTES = 1440  # 24 hours
 
 # ── Top 100 Global Stocks (Yahoo Finance tickers) ────────────────────────────
 TOP_100_TICKERS = [
